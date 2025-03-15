@@ -1,5 +1,6 @@
 from flask import Flask, render_template, redirect, url_for, flash, request, abort
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -32,12 +33,17 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
     date_joined = db.Column(db.DateTime, default=datetime.utcnow)
     listings = db.relationship('Listing', backref='seller', lazy=True)
+    sent_messages = db.relationship('Message', foreign_keys='Message.sender_id', backref='sender', lazy='dynamic')
+    received_messages = db.relationship('Message', foreign_keys='Message.recipient_id', backref='recipient', lazy='dynamic')
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
         
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def unread_message_count(self):
+        return self.received_messages.filter_by(read=False).count()
     
     def __repr__(self):
         return f'<User {self.username}>'
@@ -61,9 +67,22 @@ class Listing(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey('category.id'), nullable=False)
+    messages = db.relationship('Message', backref='listing', lazy='dynamic', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<Listing {self.title}>'
+
+class Message(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    content = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    read = db.Column(db.Boolean, default=False)
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    listing_id = db.Column(db.Integer, db.ForeignKey('listing.id'), nullable=False)
+    
+    def __repr__(self):
+        return f'<Message {self.id}>'
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -88,10 +107,14 @@ def register():
         return redirect(url_for('home'))
     
     if request.method == 'POST':
-        email = request.form.get('email')
+        email = request.form.get('email').strip().lower()
         username = request.form.get('username')
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
+        
+        if not all([email, username, password, confirm_password]):
+            flash('All fields are required', 'danger')
+            return render_template('register.html')
         
         # Validate college email
         if not email.endswith('.edu'):
@@ -110,13 +133,17 @@ def register():
             flash('Username already taken', 'danger')
             return render_template('register.html')
         
-        user = User(email=email, username=username)
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
-        
-        flash('Registration successful! Please log in.', 'success')
-        return redirect(url_for('login'))
+        try:
+            user = User(email=email, username=username)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            flash('Registration successful! Please log in.', 'success')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred during registration. Please try again.', 'danger')
+            return render_template('register.html')
     
     return render_template('register.html')
 
@@ -124,22 +151,28 @@ def register():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('home'))
-    
+
     if request.method == 'POST':
-        email = request.form.get('email')
+        email = request.form.get('email').strip()
         password = request.form.get('password')
         remember = 'remember' in request.form
-        
-        user = User.query.filter_by(email=email).first()
-        
-        if not user or not user.check_password(password):
-            flash('Invalid email or password', 'danger')
+
+        user = User.query.filter(func.lower(User.email) == email).first()
+
+        if not user:
+            flash('No account found with that email.', 'danger')
             return render_template('login.html')
-        
+
+        if not user.check_password(password):
+            flash('Invalid password.', 'danger')
+            return render_template('login.html')
+
         login_user(user, remember=remember)
+        app.logger.info('User logged in: %s', user.username)
+        flash('Logged in successfully.', 'success')
         next_page = request.args.get('next')
         return redirect(next_page or url_for('home'))
-    
+
     return render_template('login.html')
 
 @app.route('/logout')
@@ -294,30 +327,148 @@ def search():
                           selected_type=listing_type)
 
 # Initialize database with categories
-@app.before_first_request
-def create_tables():
-    db.create_all()
+def init_db():
+    with app.app_context():
+        db.create_all()
+        
+        # Add categories if they don't exist
+        categories = [
+            'Textbooks',
+            'Electronics',
+            'Furniture',
+            'Clothing',
+            'Mess Meals',
+            'Food',
+            'Services',
+            'Housing/Rentals',
+            'Transportation',
+            'Other'
+        ]
+        
+        for cat_name in categories:
+            if not Category.query.filter_by(name=cat_name).first():
+                category = Category(name=cat_name)
+                db.session.add(category)
+        
+        db.session.commit()
+
+# Initialize the database
+init_db()
+
+# Messaging routes
+@app.route('/send_message/<int:listing_id>/<int:recipient_id>', methods=['GET', 'POST'])
+@login_required
+def send_message(listing_id, recipient_id):
+    listing = Listing.query.get_or_404(listing_id)
+    recipient = User.query.get_or_404(recipient_id)
     
-    # Add categories if they don't exist
-    categories = [
-        'Textbooks',
-        'Electronics',
-        'Furniture',
-        'Clothing',
-        'Mess Meals',
-        'Food',
-        'Services',
-        'Housing/Rentals',
-        'Transportation',
-        'Other'
-    ]
+    if request.method == 'POST':
+        content = request.form.get('content')
+        if content:
+            message = Message(
+                content=content,
+                sender_id=current_user.id,
+                recipient_id=recipient_id,
+                listing_id=listing_id
+            )
+            db.session.add(message)
+            db.session.commit()
+            flash('Message sent successfully!', 'success')
+            return redirect(url_for('listing', listing_id=listing_id))
     
-    for cat_name in categories:
-        if not Category.query.filter_by(name=cat_name).first():
-            category = Category(name=cat_name)
-            db.session.add(category)
+    return render_template('send_message.html', listing=listing, recipient=recipient)
+
+@app.route('/messages')
+@login_required
+def messages():
+    # Get all unique conversations (grouped by the other user and listing)
+    sent_messages = db.session.query(Message.recipient_id, Message.listing_id).filter(Message.sender_id == current_user.id).distinct().all()
+    received_messages = db.session.query(Message.sender_id, Message.listing_id).filter(Message.recipient_id == current_user.id).distinct().all()
+    
+    conversations = []
+    
+    # Process sent messages
+    for recipient_id, listing_id in sent_messages:
+        recipient = User.query.get(recipient_id)
+        listing = Listing.query.get(listing_id)
+        if recipient and listing:
+            # Get the latest message in this conversation
+            latest_message = Message.query.filter(
+                ((Message.sender_id == current_user.id) & (Message.recipient_id == recipient_id)) |
+                ((Message.sender_id == recipient_id) & (Message.recipient_id == current_user.id))
+            ).filter(Message.listing_id == listing_id).order_by(Message.timestamp.desc()).first()
+            
+            # Check if this conversation is already in our list
+            if not any(c['user'].id == recipient.id and c['listing'].id == listing.id for c in conversations):
+                conversations.append({
+                    'user': recipient,
+                    'listing': listing,
+                    'latest_message': latest_message,
+                    'unread_count': 0  # We sent these, so they're not unread for us
+                })
+    
+    # Process received messages
+    for sender_id, listing_id in received_messages:
+        sender = User.query.get(sender_id)
+        listing = Listing.query.get(listing_id)
+        if sender and listing:
+            # Get the latest message in this conversation
+            latest_message = Message.query.filter(
+                ((Message.sender_id == current_user.id) & (Message.recipient_id == sender_id)) |
+                ((Message.sender_id == sender_id) & (Message.recipient_id == current_user.id))
+            ).filter(Message.listing_id == listing_id).order_by(Message.timestamp.desc()).first()
+            
+            # Count unread messages
+            unread_count = Message.query.filter_by(
+                sender_id=sender_id,
+                recipient_id=current_user.id,
+                listing_id=listing_id,
+                read=False
+            ).count()
+            
+            # Check if this conversation is already in our list
+            existing_conv = next((c for c in conversations if c['user'].id == sender.id and c['listing'].id == listing.id), None)
+            if existing_conv:
+                existing_conv['unread_count'] = unread_count
+            else:
+                conversations.append({
+                    'user': sender,
+                    'listing': listing,
+                    'latest_message': latest_message,
+                    'unread_count': unread_count
+                })
+    
+    # Sort conversations by the timestamp of the latest message, newest first
+    conversations.sort(key=lambda x: x['latest_message'].timestamp if x['latest_message'] else datetime.min, reverse=True)
+    
+    return render_template('messages.html', conversations=conversations)
+
+@app.route('/conversation/<int:user_id>/<int:listing_id>')
+@login_required
+def conversation(user_id, listing_id):
+    other_user = User.query.get_or_404(user_id)
+    listing = Listing.query.get_or_404(listing_id)
+    
+    # Get all messages between the current user and the other user for this listing
+    messages = Message.query.filter(
+        ((Message.sender_id == current_user.id) & (Message.recipient_id == user_id)) |
+        ((Message.sender_id == user_id) & (Message.recipient_id == current_user.id))
+    ).filter(Message.listing_id == listing_id).order_by(Message.timestamp.asc()).all()
+    
+    # Mark unread messages as read
+    unread_messages = Message.query.filter_by(
+        sender_id=user_id,
+        recipient_id=current_user.id,
+        listing_id=listing_id,
+        read=False
+    ).all()
+    
+    for message in unread_messages:
+        message.read = True
     
     db.session.commit()
+    
+    return render_template('conversation.html', messages=messages, other_user=other_user, listing=listing)
 
 if __name__ == '__main__':
     app.run(debug=True)

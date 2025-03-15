@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Conversation with {{ other_user.username }} - College Marketplace{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="mb-0">
+                    <a href="{{ url_for('messages') }}" class="text-decoration-none me-2">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+                    Conversation with {{ other_user.username }}
+                </h1>
+                <a href="{{ url_for('listing', listing_id=listing.id) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-eye me-1"></i> View Listing
+                </a>
+            </div>
+            
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-light">
+                    <div class="d-flex align-items-center">
+                        <div class="avatar me-2">{{ listing.seller.username[0]|upper }}</div>
+                        <div>
+                            <h5 class="mb-0">{{ listing.title }}</h5>
+                            <div class="text-muted small">${{ "%.2f"|format(listing.price) }} - {{ listing.listing_type|capitalize }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="message-container" style="max-height: 500px; overflow-y: auto;">
+                        {% for message in messages %}
+                            <div class="message mb-3 {% if message.sender_id == current_user.id %}text-end{% endif %}">
+                                <div class="message-content d-inline-block p-3 rounded {% if message.sender_id == current_user.id %}bg-primary text-white{% else %}bg-light{% endif %}" style="max-width: 75%;">
+                                    {{ message.content }}
+                                    <div class="message-info small {% if message.sender_id == current_user.id %}text-white-50{% else %}text-muted{% endif %}">
+                                        {{ message.timestamp.strftime('%b %d, %Y %I:%M %p') }}
+                                        {% if message.sender_id == current_user.id %}
+                                            {% if message.read %}
+                                                <i class="bi bi-check-all ms-1" title="Read"></i>
+                                            {% else %}
+                                                <i class="bi bi-check ms-1" title="Sent"></i>
+                                            {% endif %}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <form action="{{ url_for('send_message', listing_id=listing.id, recipient_id=other_user.id) }}" method="POST" class="mt-4">
+                        <div class="input-group">
+                            <textarea class="form-control" name="content" placeholder="Type your message..." required></textarea>
+                            <button class="btn btn-primary" type="submit">
+                                <i class="bi bi-send"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+    // Auto-scroll to the bottom of the message container
+    document.addEventListener('DOMContentLoaded', function() {
+        const messageContainer = document.querySelector('.message-container');
+        messageContainer.scrollTop = messageContainer.scrollHeight;
+    });
+</script>
+{% endblock %}
+{% endblock %}
