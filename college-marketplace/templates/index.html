@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}College Marketplace - Buy, Sell, Rent{% endblock %}
+
+{% block content %}
+<div class="jumbotron p-5 mb-4 rounded-3 fade-in">
+    <div class="container-fluid py-5">
+        <div class="row align-items-center">
+            <div class="col-md-7">
+                <h1 class="display-4 fw-bold">Welcome to College Marketplace</h1>
+                <p class="fs-4 mt-3">Your one-stop platform for buying, selling, and renting items within your college community.</p>
+                <div class="mt-4">
+                    <a href="{{ url_for('create_listing') }}" class="btn btn-light btn-lg"><i class="bi bi-plus-circle me-2"></i>Create a Listing</a>
+                    <a href="{{ url_for('search') }}" class="btn btn-outline-light btn-lg ms-2"><i class="bi bi-search me-2"></i>Browse Listings</a>
+                </div>
+            </div>
+            <div class="col-md-5 d-none d-md-block text-center">
+                <img src="https://cdn.pixabay.com/photo/2017/07/31/11/44/laptop-2557576_960_720.jpg" alt="College Marketplace" class="img-fluid rounded shadow" style="max-height: 300px;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-5 fade-in" style="animation-delay: 0.2s;">
+    <div class="col-md-12">
+        <h2 class="mb-4 fw-bold">Browse Categories</h2>
+        <div class="row">
+            {% for category in categories %}
+            <div class="col-md-4 col-lg-3 mb-3">
+                <div class="category-card h-100">
+                    <i class="bi {% if category.name == 'Textbooks' %}bi-book{% elif category.name == 'Electronics' %}bi-laptop{% elif category.name == 'Furniture' %}bi-house-door{% elif category.name == 'Clothing' %}bi-bag{% elif category.name == 'Mess Meals' %}bi-cup-hot{% elif category.name == 'Food' %}bi-egg-fried{% elif category.name == 'Services' %}bi-tools{% elif category.name == 'Housing/Rentals' %}bi-house{% elif category.name == 'Transportation' %}bi-bicycle{% else %}bi-grid{% endif %}"></i>
+                    <h5 class="card-title">{{ category.name }}</h5>
+                    <a href="{{ url_for('category', category_id=category.id) }}" class="btn btn-sm btn-outline-primary mt-2">Browse Items</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="row fade-in" style="animation-delay: 0.4s;">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 class="fw-bold mb-0">Recent Listings</h2>
+            <a href="{{ url_for('search') }}" class="btn btn-outline-primary">View All <i class="bi bi-arrow-right ms-1"></i></a>
+        </div>
+        {% if recent_listings %}
+        <div class="row">
+            {% for listing in recent_listings %}
+            <div class="col-md-4 mb-4">
+                <div class="card h-100 listing-card shadow-sm">
+                    {% if listing.image_filename %}
+                    <img src="{{ url_for('static', filename='images/uploads/' + listing.image_filename) }}" class="card-img-top" alt="{{ listing.title }}" style="height: 200px; object-fit: cover;">
+                    {% else %}
+                    <div class="card-img-top bg-light d-flex align-items-center justify-content-center" style="height: 200px;">
+                        <i class="bi bi-image text-secondary" style="font-size: 3rem;"></i>
+                    </div>
+                    {% endif %}
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <span class="badge bg-{{ 'primary' if listing.listing_type == 'sell' else 'success' if listing.listing_type == 'buy' else 'warning' }}">
+                                    {{ listing.listing_type|capitalize }}
+                                </span>
+                                <span class="badge bg-secondary ms-1">{{ listing.category.name }}</span>
+                            </div>
+                            <h5 class="price-tag mb-0">${{ "%.2f"|format(listing.price) }}</h5>
+                        </div>
+                        <h5 class="card-title">{{ listing.title }}</h5>
+                        <p class="card-text text-muted">{{ listing.description|truncate(80) }}</p>
+                    </div>
+                    <div class="card-footer bg-white border-top-0">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="user-info">
+                                <div class="avatar">{{ listing.seller.username[0]|upper }}</div>
+                                <small>{{ listing.seller.username }}</small>
+                            </div>
+                            <a href="{{ url_for('listing', listing_id=listing.id) }}" class="btn btn-sm btn-primary">View Details</a>
+                        </div>
+                        <small class="text-muted d-block mt-2"><i class="bi bi-clock me-1"></i>{{ listing.date_posted.strftime('%b %d, %Y') }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info shadow-sm">
+            <i class="bi bi-info-circle me-2"></i> No listings available yet. <a href="{{ url_for('create_listing') }}" class="alert-link">Be the first to create one!</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

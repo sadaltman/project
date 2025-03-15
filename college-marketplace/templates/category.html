@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}{{ category.name }} - College Marketplace{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>{{ category.name }}</h2>
+        <p>Browse all listings in the {{ category.name }} category.</p>
+        
+        <div class="mb-4">
+            <a href="{{ url_for('home') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Back to Home
+            </a>
+            <a href="{{ url_for('create_listing') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-circle"></i> Create Listing in {{ category.name }}
+            </a>
+        </div>
+        
+        {% if listings %}
+        <div class="row">
+            {% for listing in listings %}
+            <div class="col-md-4 mb-4">
+                <div class="card h-100">
+                    {% if listing.image_filename %}
+                    <img src="{{ url_for('static', filename='images/uploads/' + listing.image_filename) }}" class="card-img-top" alt="{{ listing.title }}" style="height: 200px; object-fit: cover;">
+                    {% else %}
+                    <div class="card-img-top bg-light d-flex align-items-center justify-content-center" style="height: 200px;">
+                        <i class="bi bi-image text-secondary" style="font-size: 3rem;"></i>
+                    </div>
+                    {% endif %}
+                    <div class="card-body">
+                        <span class="badge bg-{{ 'primary' if listing.listing_type == 'sell' else 'success' if listing.listing_type == 'buy' else 'warning' }}">
+                            {{ listing.listing_type|capitalize }}
+                        </span>
+                        <h5 class="card-title mt-2">{{ listing.title }}</h5>
+                        <h6 class="card-subtitle mb-2 text-muted">${{ "%.2f"|format(listing.price) }}</h6>
+                        <p class="card-text">{{ listing.description|truncate(100) }}</p>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Posted by {{ listing.seller.username }}</small>
+                            <a href="{{ url_for('listing', listing_id=listing.id) }}" class="btn btn-sm btn-primary">View Details</a>
+                        </div>
+                    </div>
+                    <div class="card-footer text-muted">
+                        <small>{{ listing.date_posted.strftime('%Y-%m-%d') }}</small>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            No listings available in this category yet. <a href="{{ url_for('create_listing') }}">Be the first to create one!</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
